@@ -11,20 +11,42 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
         with:
-          node-version: "20"
-      - name: Syntax-check editor scripts
+          node-version: 22
+
+      - name: Check JavaScript syntax
         run: |
           node --check app/src/cover.js
-          node --input-type=module --check < app/src/main.js
-          echo "JS syntax OK"
-      - name: Verify fonts and samples
+          node --check app/src/main.js
+          node --check serve.ts
+          node --check main.ts
+
+      - name: Verify font magic bytes (TrueType 00 01 00 00)
         run: |
           for f in app/fonts/*.ttf; do
-            if head -c 4 "$f" | od -An -tx1 | grep -q "00 01 00 00"; then echo "OK $f"; else echo "BAD $f"; exit 1; fi
+            magic=$(head -c 4 "$f" | od -An -tx1 | tr -d ' \n')
+            if [ "$magic" != "00010000" ]; then
+              echo "$f: bad magic bytes: $magic"
+              exit 1
+            fi
+            echo "$f: OK ($magic)"
           done
-          test -f app/samples/boulevard.jpg && test -f app/samples/pier.jpg && echo "samples OK"
+          test -f app/fonts/OFL.txt || (echo "app/fonts/OFL.txt missing" && exit 1)
+
       - name: Check required files
         run: |
-          test -f app/index.html && test -f app/style.css && test -f app/src/cover.js && test -f app/src/main.js && test -f main.ts && test -f serve.ts && echo "files OK"
+          test -f app/index.html || (echo "app/index.html missing" && exit 1)
+          test -f app/style.css || (echo "app/style.css missing" && exit 1)
+          test -f app/src/cover.js || (echo "app/src/cover.js missing" && exit 1)
+          test -f app/src/main.js || (echo "app/src/main.js missing" && exit 1)
+          test -f main.ts || (echo "main.ts missing" && exit 1)
+          test -f serve.ts || (echo "serve.ts missing" && exit 1)
+          test -f vendor/makefun-app.ts || (echo "vendor/makefun-app.ts missing" && exit 1)
+          test -f LICENSE || (echo "LICENSE missing" && exit 1)
+          test -f README.md || (echo "README.md missing" && exit 1)
+          test -f shots.json || (echo "shots.json missing" && exit 1)
+          ls screenshots/*.jpg | wc -l | grep -q . || (echo "no screenshots" && exit 1)
+          echo "All required files present."
