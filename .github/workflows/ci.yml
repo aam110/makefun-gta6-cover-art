@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Syntax-check editor scripts
+        run: |
+          node --check app/src/cover.js
+          node --input-type=module --check < app/src/main.js
+          echo "JS syntax OK"
+      - name: Verify fonts and samples
+        run: |
+          for f in app/fonts/*.ttf; do
+            if head -c 4 "$f" | od -An -tx1 | grep -q "00 01 00 00"; then echo "OK $f"; else echo "BAD $f"; exit 1; fi
+          done
+          test -f app/samples/boulevard.jpg && test -f app/samples/pier.jpg && echo "samples OK"
+      - name: Check required files
+        run: |
+          test -f app/index.html && test -f app/style.css && test -f app/src/cover.js && test -f app/src/main.js && test -f main.ts && test -f serve.ts && echo "files OK"
