@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VICE HEAT — GTA-style Cover Art Studio</title>
+<meta name="description" content="Turn your photo into Vice City-style cover art: multi-panel posters, sunset and neon grades, bold caption lettering, exported as PNG. Works fully offline.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <div>
+      <h1>VICE HEAT</h1>
+      <p>Cover Art Studio &middot; make your own Vice City-style poster</p>
+    </div>
+  </div>
+  <div class="top-actions">
+    <span class="offline-badge" title="No uploads, no network">100% OFFLINE &middot; YOUR PHOTOS STAY ON YOUR MACHINE</span>
+    <button id="exportBtn" class="btn btn-primary" type="button">Export PNG</button>
+  </div>
+</header>
+
+<main class="studio">
+  <aside class="panel" aria-label="Cover controls">
+    <section class="group">
+      <h2><span class="step">1</span> Your photos</h2>
+      <label class="btn btn-upload" for="photoInput">+ Add photos from your machine</label>
+      <input id="photoInput" type="file" accept="image/*" multiple hidden>
+      <p class="hint">Or try a sample photo:</p>
+      <div class="sample-row">
+        <button class="sample-btn" type="button" data-sample="samples/pier.jpg">
+          <img src="samples/pier.jpg" alt="Sample photo: neon pier at dusk">
+          <span>Pier</span>
+        </button>
+        <button class="sample-btn" type="button" data-sample="samples/boulevard.jpg">
+          <img src="samples/boulevard.jpg" alt="Sample photo: palm boulevard at sunset">
+          <span>Boulevard</span>
+        </button>
+      </div>
+      <div id="photoStrip" class="photo-strip" aria-label="Loaded photos"></div>
+      <p class="hint">Click a photo, then click a panel to place it there. Drag inside a panel to move its photo.</p>
+    </section>
+
+    <section class="group">
+      <h2><span class="step">2</span> Layout</h2>
+      <div class="choice-row" id="layoutRow" role="group" aria-label="Panel layout">
+        <button type="button" data-layout="hero" class="choice active">Hero Split</button>
+        <button type="button" data-layout="quad" class="choice">Four Corners</button>
+        <button type="button" data-layout="triptych" class="choice">Triptych</button>
+        <button type="button" data-layout="poster" class="choice">Full Poster</button>
+      </div>
+    </section>
+
+    <section class="group">
+      <h2><span class="step">3</span> Colour grade</h2>
+      <div class="choice-row" id="gradeRow" role="group" aria-label="Colour grade">
+        <button type="button" data-grade="sunset" class="choice swatch sunset active">Sunset Blaze</button>
+        <button type="button" data-grade="neon" class="choice swatch neon">Neon Nights</button>
+        <button type="button" data-grade="gold" class="choice swatch gold">Golden Hour</button>
+        <button type="button" data-grade="clean" class="choice swatch clean">Clean</button>
+      </div>
+    </section>
+
+    <section class="group">
+      <h2><span class="step">4</span> Caption</h2>
+      <label class="field-label" for="captionInput">Main caption</label>
+      <input id="captionInput" type="text" value="VICE HEAT" maxlength="42" autocomplete="off" spellcheck="false">
+      <label class="field-label" for="subInput">Tag line (optional)</label>
+      <input id="subInput" type="text" value="WELCOME TO VICE CITY" maxlength="42" autocomplete="off" spellcheck="false">
+      <div class="choice-row" id="styleRow" role="group" aria-label="Lettering style">
+        <button type="button" data-style="block" class="choice active">Blockbuster</button>
+        <button type="button" data-style="neon" class="choice">Neon Glow</button>
+        <button type="button" data-style="sunset" class="choice">Sunset Fade</button>
+      </div>
+      <div class="choice-row" id="posRow" role="group" aria-label="Caption position">
+        <button type="button" data-pos="top" class="choice">Top</button>
+        <button type="button" data-pos="center" class="choice">Centre</button>
+        <button type="button" data-pos="bottom" class="choice active">Bottom</button>
+      </div>
+      <label class="field-label" for="sizeSlider">Caption size <span id="sizeValue">100%</span></label>
+      <input id="sizeSlider" type="range" min="60" max="150" value="100" step="5">
+    </section>
+
+    <section class="group">
+      <h2><span class="step">5</span> Decorations</h2>
+      <div class="toggles">
+        <label><input type="checkbox" id="decorSun" checked> Retro sun</label>
+        <label><input type="checkbox" id="decorPalms" checked> Palm silhouettes</label>
+        <label><input type="checkbox" id="decorSkyline"> Skyline</label>
+        <label><input type="checkbox" id="decorHalftone" checked> Halftone dots</label>
+      </div>
+    </section>
+
+    <section class="group">
+      <h2><span class="step">6</span> Export size</h2>
+      <div class="choice-row" id="sizeRow" role="group" aria-label="Export size">
+        <button type="button" data-size="square" class="choice">1080 &times; 1080</button>
+        <button type="button" data-size="portrait" class="choice">1080 &times; 1350</button>
+        <button type="button" data-size="wide" class="choice active">1920 &times; 1080</button>
+      </div>
+      <label class="field-label" for="zoomSlider">Selected panel zoom <span id="zoomValue">100%</span></label>
+      <input id="zoomSlider" type="range" min="100" max="300" value="100" step="5">
+      <div class="row-btns">
+        <button id="fillAllBtn" class="btn btn-ghost" type="button">Fill every panel with one photo</button>
+        <button id="shuffleBtn" class="btn btn-ghost" type="button">Shuffle panels</button>
+      </div>
+    </section>
+  </aside>
+
+  <section class="stage" aria-label="Live preview">
+    <div class="canvas-wrap">
+      <canvas id="preview" width="1920" height="1080"></canvas>
+      <p class="stage-hint" id="stageHint">Drag inside a panel to move its photo &middot; scroll to zoom &middot; click a panel to select it</p>
+    </div>
+    <p class="stage-note">Live preview &mdash; what you see is exactly what exports. Photos are read on your machine and never uploaded anywhere.</p>
+  </section>
+</main>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

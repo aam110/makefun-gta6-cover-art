@@ -1,0 +1,16 @@
+Font attribution
+=================
+
+The four font files in this folder are members of the Noto Sans family
+(Noto Sans Display Condensed Black, Noto Sans Display Bold, Noto Sans Bold
+and Noto Sans Regular), Copyright 2010, 2012-2020 Google Inc. and
+2015-2020 Google LLC, renamed here for this app (ViceDisplay-Black,
+ViceDisplay-Bold, ViceText-Bold, ViceText-Regular).
+
+They are licensed under the SIL Open Font License, Version 1.1
+(OFL-1.1), which allows them to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves, and to
+be bundled, embedded, redistributed and/or sold with any software
+provided that any reserved names are not used by derivative works.
+The fonts and derivatives cannot be released under any other type of
+license. Full license text: SIL Open Font License, Version 1.1.
