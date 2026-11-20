@@ -1,402 +1,208 @@
-// cover.js — the Solstice Press cover engine.
-//
-// One function, renderCover, draws a complete cover onto any canvas at any
-// size: the editor preview and the exported PNGs share it, so what you see is
-// what you get. Layouts are geometry functions over the cover size; panels
-// hold either a user photo (pan + zoom per panel) or a seeded procedural
-// scene; grades, lettering and retro effects finish the poster.
+// Midnight Mile — cover state, layouts, grades and the live DOM poster.
+// Every panel is a real photo (sample or the user's own upload). The same
+// state drives the live DOM preview and the canvas PNG export.
 
-import {
-  GRADES,
-  SCENE_KINDS,
-  applyGrade,
-  applyGrain,
-  applyScanlines,
-  applyVignette,
-  drawHalftone,
-  drawNeonGrid,
-  drawScene,
-  hashSeed,
-  mulberry32,
-  starburstPath,
-} from './art.js';
-import {
-  drawMasthead,
-  drawPill,
-  drawRibbonTag,
-  drawSubtitle,
-  drawVIBadge,
-  drawWantedStars,
-} from './lettering.js';
+export const GRADES = {
+  sunset:  { label: 'Vice Sunset',  filter: 'saturate(1.28) contrast(1.06) sepia(.18) hue-rotate(-8deg)', tint: ['rgba(255,122,24,.22)', 'rgba(255,0,120,.16)'] },
+  neon:    { label: 'Neon Night',   filter: 'saturate(1.55) contrast(1.14) hue-rotate(16deg) brightness(.94)', tint: ['rgba(80,40,255,.28)', 'rgba(255,0,150,.20)'] },
+  golden:  { label: 'Golden Hour',  filter: 'sepia(.34) saturate(1.42) contrast(1.05)', tint: ['rgba(255,190,60,.26)', 'rgba(255,120,20,.14)'] },
+  noir:    { label: 'Noir Pink',    filter: 'grayscale(.55) contrast(1.16) brightness(.92)', tint: ['rgba(255,60,140,.20)', 'rgba(20,0,40,.25)'] },
+  pastel:  { label: 'Miami Pastel', filter: 'saturate(.85) contrast(.92) brightness(1.09)', tint: ['rgba(255,180,220,.20)', 'rgba(120,220,255,.16)'] },
+  chrome:  { label: 'Chrome Dusk',  filter: 'saturate(.72) contrast(1.16) brightness(1.03) hue-rotate(-12deg)', tint: ['rgba(90,150,255,.22)', 'rgba(180,120,255,.14)'] },
+};
 
-export const EXPORT_SIZES = [
-  { id: 'square', label: '1080 × 1080', w: 1080, h: 1080 },
-  { id: 'portrait', label: '1080 × 1350', w: 1080, h: 1350 },
-  { id: 'wide', label: '1920 × 1080', w: 1920, h: 1080 },
-];
+// Panel rectangles are fractions of the cover (x, y, w, h in 0..1).
+// The panels band runs from y .075 to .825; the title floats over it.
+export const LAYOUTS = {
+  nine: {
+    label: 'Nine Panel',
+    slots: [
+      { x: .012, y: .085, w: .318, h: .238 }, { x: .341, y: .085, w: .318, h: .238 }, { x: .670, y: .085, w: .318, h: .238 },
+      { x: .012, y: .333, w: .318, h: .238 }, { x: .341, y: .333, w: .318, h: .238 }, { x: .670, y: .333, w: .318, h: .238 },
+      { x: .012, y: .581, w: .318, h: .238 }, { x: .341, y: .581, w: .318, h: .238 }, { x: .670, y: .581, w: .318, h: .238 },
+    ],
+    hero: -1,
+  },
+  hero: {
+    label: 'Hero + Three',
+    slots: [
+      { x: .012, y: .085, w: .430, h: .734, hero: true },
+      { x: .453, y: .085, w: .262, h: .357 },
+      { x: .726, y: .085, w: .262, h: .357 },
+      { x: .453, y: .452, w: .262, h: .367 },
+      { x: .726, y: .452, w: .262, h: .367 },
+    ],
+    hero: 0,
+  },
+  bleed: {
+    label: 'Full Bleed',
+    slots: [{ x: .012, y: .085, w: .976, h: .734, hero: true }],
+    hero: 0,
+  },
+  tilted: {
+    label: 'Tilted Stack',
+    slots: [
+      { x: .030, y: .110, w: .400, h: .640, rot: -4, hero: true },
+      { x: .420, y: .090, w: .270, h: .330, rot: 3 },
+      { x: .700, y: .130, w: .270, h: .330, rot: -2 },
+      { x: .440, y: .450, w: .250, h: .340, rot: 5 },
+      { x: .710, y: .480, w: .250, h: .320, rot: -3 },
+    ],
+    hero: 0,
+  },
+  bands: {
+    label: 'Film Bands',
+    slots: [
+      { x: .012, y: .085, w: .976, h: .238 },
+      { x: .012, y: .333, w: .976, h: .238 },
+      { x: .012, y: .581, w: .976, h: .238 },
+    ],
+    hero: -1,
+  },
+  turntable: {
+    label: 'Turntable',
+    slots: [
+      { x: .012, y: .085, w: .430, h: .734, hero: true },
+      { x: .453, y: .085, w: .262, h: .357 },
+      { x: .726, y: .085, w: .262, h: .357 },
+      { x: .453, y: .452, w: .262, h: .367 },
+      { x: .726, y: .452, w: .262, h: .367 },
+    ],
+    hero: 0,
+  },
+};
 
-export const LAYOUTS = [
-  { id: 'nine', name: 'Nine Panel', blurb: 'The classic 3 × 3 poster grid', panels: 9 },
-  { id: 'hero', name: 'Hero + Three', blurb: 'One big moment, three side stories', panels: 4 },
-  { id: 'fullbleed', name: 'Full Bleed', blurb: 'One photo edge to edge', panels: 1 },
-  { id: 'tilted', name: 'Tilted Stack', blurb: 'Snapshots tossed on a sunset', panels: 4 },
-  { id: 'bands', name: 'Film Bands', blurb: 'Widescreen strips, title in the middle', panels: 4 },
-];
+// Which panel index fills each layout slot (nine uses all nine).
+export const LAYOUT_PANELS = {
+  nine: [0, 1, 2, 3, 4, 5, 6, 7, 8],
+  hero: [0, 1, 2, 3, 4],
+  bleed: [0],
+  tilted: [0, 1, 2, 3, 4],
+  bands: [5, 2, 4],
+  turntable: [0, 1, 2, 3, 4],
+};
 
-export const LAYOUT_IDS = LAYOUTS.map((l) => l.id);
-export const MAX_PANELS = 9;
-
-// A shuffled deck of scenes for one art seed: the six scenes in a random
-// order, then three more from a second shuffle, so a 9-panel cover shows
-// every scene once before any repeats.
-function sceneDeck(artSeed) {
-  const rnd = mulberry32(hashSeed(`deck-${artSeed}`));
-  const shuffled = [...SCENE_KINDS];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(rnd() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  const second = [...shuffled];
-  for (let i = second.length - 1; i > 0; i--) {
-    const j = Math.floor(rnd() * (i + 1));
-    [second[i], second[j]] = [second[j], second[i]];
-  }
-  return [...shuffled, ...second.slice(0, 3)];
-}
-
-export function sceneForPanel(index, artSeed) {
-  return sceneDeck(artSeed)[index % MAX_PANELS];
-}
-
-// A fresh panel: no photo yet, so it shows a seeded procedural scene.
-export function makePanel(index, artSeed) {
-  return {
-    image: null,
-    imageUrl: null,
-    scene: sceneForPanel(index, artSeed),
-    seed: hashSeed(`panel-${index}-${artSeed}`),
-    panX: 0,
-    panY: 0,
-    zoom: 1,
-  };
+function samplePanel(img, role, loc, time, quip, portrait, heat = false) {
+  return { img, role, loc, time, quip, portrait, heat, px: 0.5, py: portrait ? 0.32 : 0.5, zoom: 1 };
 }
 
 export function defaultState() {
   return {
-    layout: 'nine',
-    grade: 'vice',
-    titleStyle: 'sunset',
-    title: 'LEONIDA NIGHTS',
-    subtitle: 'A VICE CITY STORY',
-    stars: 4,
-    artSeed: 7,
-    exportSize: 'wide',
-    fx: { grain: true, vignette: true, scanlines: false, halftone: true },
-    panels: Array.from({ length: MAX_PANELS }, (_, i) => makePanel(i, 7)),
+    title: 'MIDNIGHT MILE',
+    subtitle: 'One Last Run',
+    quote: 'PURE MIDNIGHT MAYHEM',
+    quoteSource: 'THE HARBOR GAZETTE',
+    tagline: 'FIVE FRIENDS · ONE COAST · NO WAY BACK',
+    volume: 'VOL. 01',
+    billing: 'A MIDNIGHT MILE PICTURE · STARRING YOU · SHOT ON YOUR OWN CAMERA · GRADED BY HAND',
+    layout: 'hero',
+    grade: 'sunset',
+    size: '1920x1080',
+    showSeal: true,
+    showBarcode: true,
+    showComing: true,
+    cycle: 'sunset',
+    panels: [
+      samplePanel('samples/p5.jpg', 'THE DRIVER', 'OCEAN DRIVE', '6:42 PM', 'LOOKING FOR TROUBLE', true),
+      samplePanel('samples/p2.jpg', 'THE INSIDER', 'ROOFTOP BAR', '8:05 PM', 'OWNS THE SKYLINE', true),
+      samplePanel('samples/s3.jpg', 'THE GETAWAY', 'CORAL CAUSEWAY', '7:15 PM', 'FULL THROTTLE', false, true),
+      samplePanel('samples/p4.jpg', 'THE CLOSER', 'MARINA BAY', '9:40 PM', 'NO WITNESSES', true),
+      samplePanel('samples/s2.jpg', 'THE FIXER', 'NEON GARAGE', '3:40 AM', 'CLOSES LATE', false),
+      samplePanel('samples/s1.jpg', 'THE LOOKOUT', 'BONFIRE BEACH', '6:15 PM', 'SEES EVERYTHING', false),
+      samplePanel('samples/p1.jpg', 'THE RIDER', 'COAST HIGHWAY', '2:15 PM', 'NEVER BRAKES', true),
+      samplePanel('samples/s5.jpg', 'THE MECHANIC', 'RAMEN ROW', '11:20 PM', 'ALWAYS ON TIME', false),
+      samplePanel('samples/s6.jpg', 'THE BOSS', 'HARBOR TOWER', '10:05 PM', 'OWNS THE SKYLINE', false),
+    ],
   };
 }
 
-// ---------------------------------------------------------------------------
-// Layout geometry (all rects in cover pixels)
-// ---------------------------------------------------------------------------
-
-export function layoutGeometry(layoutId, W, H) {
-  const gap = Math.max(3, Math.round(Math.min(W, H) * 0.011));
-  const panels = [];
-  let title;
-  let badge = null;
-  let stars = null;
-  let backdrop = null;
-
-  if (layoutId === 'nine') {
-    const titleH = Math.round(H * 0.185);
-    const gridH = H - titleH - gap;
-    const cw = (W - gap * 4) / 3;
-    const ch = (gridH - gap * 4) / 3;
-    for (let r = 0; r < 3; r++) {
-      for (let c = 0; c < 3; c++) {
-        panels.push({
-          x: gap + c * (cw + gap),
-          y: gap + r * (ch + gap),
-          w: cw,
-          h: ch,
-          rot: 0,
-        });
-      }
-    }
-    title = { x: 0, y: H - titleH, w: W, h: titleH, kind: 'solid', align: 'left' };
-    badge = { x: W - titleH * 0.52 - gap * 2, y: H - titleH / 2, r: titleH * 0.34 };
-    stars = { x: gap * 2, y: gap * 2 + Math.min(W, H) * 0.02, r: Math.min(W, H) * 0.018 };
-  } else if (layoutId === 'hero') {
-    const titleH = Math.round(H * 0.18);
-    const contentH = H - titleH - gap;
-    const heroW = Math.round(W * 0.62);
-    panels.push({ x: gap, y: gap, w: heroW - gap * 1.5, h: contentH - gap, rot: 0 });
-    const sideX = heroW + gap * 0.5;
-    const sideW = W - sideX - gap;
-    const sh = (contentH - gap * 4) / 3;
-    for (let i = 0; i < 3; i++) {
-      panels.push({ x: sideX, y: gap + i * (sh + gap), w: sideW, h: sh, rot: 0 });
-    }
-    title = { x: 0, y: H - titleH, w: W, h: titleH, kind: 'solid', align: 'left' };
-    badge = { x: W - titleH * 0.52 - gap * 2, y: H - titleH / 2, r: titleH * 0.34 };
-    stars = { x: gap * 2, y: gap * 2 + Math.min(W, H) * 0.02, r: Math.min(W, H) * 0.018 };
-  } else if (layoutId === 'fullbleed') {
-    panels.push({ x: 0, y: 0, w: W, h: H, rot: 0 });
-    title = { x: 0, y: H * 0.6, w: W, h: H * 0.4, kind: 'scrim', align: 'center' };
-    badge = { x: W - Math.min(W, H) * 0.075, y: Math.min(W, H) * 0.075, r: Math.min(W, H) * 0.05 };
-    stars = { x: W * 0.04, y: H * 0.045 + Math.min(W, H) * 0.02, r: Math.min(W, H) * 0.018 };
-  } else if (layoutId === 'tilted') {
-    backdrop = 'sunset';
-    const pw = W * 0.44;
-    const ph = H * 0.31;
-    const spots = [
-      { x: W * 0.04, y: H * 0.235, rot: -0.055 },
-      { x: W * 0.52, y: H * 0.205, rot: 0.05 },
-      { x: W * 0.06, y: H * 0.565, rot: 0.04 },
-      { x: W * 0.5, y: H * 0.595, rot: -0.06 },
-    ];
-    for (const s of spots) panels.push({ x: s.x, y: s.y, w: pw, h: ph, rot: s.rot });
-    title = { x: 0, y: H * 0.02, w: W, h: H * 0.15, kind: 'floating', align: 'center' };
-    badge = { x: W - Math.min(W, H) * 0.07, y: H - Math.min(W, H) * 0.07, r: Math.min(W, H) * 0.045 };
-    stars = { x: W * 0.04, y: H - Math.min(W, H) * 0.05, r: Math.min(W, H) * 0.016 };
-  } else {
-    // bands
-    const heights = [0.2, 0.17, 0.17, 0.2];
-    let y = gap;
-    for (const frac of heights.slice(0, 2)) {
-      const h = H * frac - gap;
-      panels.push({ x: gap, y, w: W - gap * 2, h, rot: 0 });
-      y += h + gap;
-    }
-    const titleH = H * 0.22;
-    title = { x: 0, y, w: W, h: titleH, kind: 'solid', align: 'center' };
-    y += titleH + gap;
-    for (const frac of heights.slice(2)) {
-      const h = H * frac - gap;
-      panels.push({ x: gap, y, w: W - gap * 2, h, rot: 0 });
-      y += h + gap;
-    }
-    badge = { x: W - titleH * 0.5 - gap * 2, y: title.y + titleH / 2, r: titleH * 0.33 };
-    stars = { x: gap * 2, y: title.y + titleH / 2, r: Math.min(W, H) * 0.016 };
-  }
-
-  return { panels, title, badge, stars, backdrop, gap };
+// Face-aware crop heuristic: portraits favour the upper third (where the
+// face usually sits), scenes stay centred. Applied when a photo is placed.
+export function faceAwareFocus(isPortrait) {
+  return { px: 0.5, py: isPortrait ? 0.32 : 0.5 };
 }
 
-// Which panel (if any) contains point (px, py)? Topmost last.
-export function panelAt(geo, px, py) {
-  for (let i = geo.panels.length - 1; i >= 0; i--) {
-    const p = geo.panels[i];
-    const cx = p.x + p.w / 2;
-    const cy = p.y + p.h / 2;
-    const dx = px - cx;
-    const dy = py - cy;
-    const cos = Math.cos(-p.rot);
-    const sin = Math.sin(-p.rot);
-    const lx = dx * cos - dy * sin;
-    const ly = dx * sin + dy * cos;
-    if (Math.abs(lx) <= p.w / 2 && Math.abs(ly) <= p.h / 2) return i;
-  }
-  return -1;
-}
+export function renderCover(state, selectedIndex, onSelect) {
+  const cover = document.getElementById('cover');
+  cover.dataset.layout = state.layout;
+  cover.dataset.grade = state.grade;
+  cover.dataset.size = state.size;
+  document.getElementById('titleText').textContent = state.title;
+  document.getElementById('coverSubtitle').textContent = state.subtitle;
+  document.getElementById('quoteText').textContent = '“' + state.quote + '”';
+  document.getElementById('quoteSrc').textContent = '— ' + state.quoteSource;
+  document.getElementById('taglineText').textContent = state.tagline;
+  document.getElementById('volBadge').textContent = state.volume;
+  document.getElementById('billingText').textContent = state.billing;
+  document.getElementById('sealBadge').style.display = state.showSeal ? '' : 'none';
+  document.getElementById('barcodeBox').style.display = state.showBarcode ? '' : 'none';
+  document.getElementById('comingSoon').style.display = state.showComing ? '' : 'none';
 
-// ---------------------------------------------------------------------------
-// Panel painting
-// ---------------------------------------------------------------------------
+  const wrap = document.getElementById('coverPanels');
+  wrap.innerHTML = '';
+  const layout = LAYOUTS[state.layout];
+  const picks = LAYOUT_PANELS[state.layout];
+  picks.forEach((panelIndex, slotIndex) => {
+    const p = state.panels[panelIndex];
+    const r = layout.slots[slotIndex];
+    const el = document.createElement('div');
+    el.className = 'cover-panel' + (r.hero ? ' hero-pop' : '') + (panelIndex === selectedIndex ? ' selected' : '');
+    el.style.left = (r.x * 100) + '%';
+    el.style.top = (r.y * 100) + '%';
+    el.style.width = (r.w * 100) + '%';
+    el.style.height = (r.h * 100) + '%';
+    if (r.rot) el.style.transform = 'rotate(' + r.rot + 'deg)';
+    el.style.zIndex = r.hero ? 6 : 2 + slotIndex;
+    el.dataset.panel = String(panelIndex);
 
-// Paint one panel (photo or procedural scene + grade) onto its own canvas.
-function paintPanelCanvas(panel, w, h, grade) {
-  const iw = Math.max(2, Math.round(w));
-  const ih = Math.max(2, Math.round(h));
-  const canvas = document.createElement('canvas');
-  canvas.width = iw;
-  canvas.height = ih;
-  const ctx = canvas.getContext('2d');
-  const zoom = panel.zoom || 1;
-  const panX = panel.panX || 0;
-  const panY = panel.panY || 0;
+    const photo = document.createElement('div');
+    photo.className = 'photo';
+    const img = document.createElement('img');
+    img.src = p.img;
+    img.alt = p.role;
+    img.draggable = false;
+    // Pan + zoom: translate the photo inside its frame, scale for zoom.
+    const tx = (0.5 - p.px) * 60 * (p.zoom - 0.4);
+    const ty = (0.5 - p.py) * 60 * (p.zoom - 0.4);
+    photo.style.transform = 'translate(' + tx.toFixed(1) + '%, ' + ty.toFixed(1) + '%) scale(' + p.zoom + ')';
+    photo.appendChild(img);
+    el.appendChild(photo);
 
-  if (panel.image) {
-    const img = panel.image;
-    const base = Math.max(iw / img.naturalWidth, ih / img.naturalHeight);
-    const scale = base * zoom;
-    const dw = img.naturalWidth * scale;
-    const dh = img.naturalHeight * scale;
-    const dx = (iw - dw) / 2 + panX * iw;
-    const dy = (ih - dh) / 2 + panY * ih;
-    if (grade === 'noir') ctx.filter = 'grayscale(1) contrast(1.12)';
-    ctx.drawImage(img, dx, dy, dw, dh);
-    ctx.filter = 'none';
-  } else {
-    // Scene first, then pan/zoom as a transform of the finished scene.
-    const scene = document.createElement('canvas');
-    scene.width = iw;
-    scene.height = ih;
-    drawScene(scene.getContext('2d'), iw, ih, panel.seed, panel.scene);
-    const dw = iw * zoom;
-    const dh = ih * zoom;
-    const dx = (iw - dw) / 2 + panX * iw;
-    const dy = (ih - dh) / 2 + panY * ih;
-    if (grade === 'noir') ctx.filter = 'grayscale(1) contrast(1.12)';
-    ctx.drawImage(scene, dx, dy, dw, dh);
-    ctx.filter = 'none';
-  }
-  applyGrade(ctx, iw, ih, grade);
-  return canvas;
-}
+    const rim = document.createElement('div');
+    rim.className = 'rim';
+    el.appendChild(rim);
 
-// ---------------------------------------------------------------------------
-// The cover render
-// ---------------------------------------------------------------------------
-
-export function renderCover(canvas, state) {
-  const W = canvas.width;
-  const H = canvas.height;
-  const ctx = canvas.getContext('2d');
-  const geo = layoutGeometry(state.layout, W, H);
-  const unit = Math.min(W, H);
-
-  // Base.
-  ctx.fillStyle = '#12081f';
-  ctx.fillRect(0, 0, W, H);
-
-  // Backdrop for the tilted layout: a full-cover sunset with a neon grid.
-  if (geo.backdrop === 'sunset') {
-    drawScene(ctx, W, H, hashSeed(`backdrop-${state.artSeed}`), 'sunset-beach');
-    drawNeonGrid(ctx, W, H, H * 0.62);
-    applyGrade(ctx, W, H, state.grade);
-  }
-
-  // Panels.
-  const frame = Math.max(2, unit * 0.006);
-  geo.panels.forEach((rect, i) => {
-    const panel = state.panels[i];
-    if (!panel) return;
-    const art = paintPanelCanvas(panel, rect.w, rect.h, state.grade);
-    ctx.save();
-    ctx.translate(rect.x + rect.w / 2, rect.y + rect.h / 2);
-    ctx.rotate(rect.rot);
-    ctx.shadowColor = 'rgba(0,0,0,0.55)';
-    ctx.shadowBlur = unit * 0.012;
-    ctx.shadowOffsetY = unit * 0.006;
-    ctx.drawImage(art, -rect.w / 2, -rect.h / 2, rect.w, rect.h);
-    ctx.shadowColor = 'transparent';
-    ctx.lineWidth = frame;
-    ctx.strokeStyle = '#f5f0e6';
-    ctx.strokeRect(-rect.w / 2, -rect.h / 2, rect.w, rect.h);
-    ctx.restore();
-  });
-
-  // Title block.
-  const t = geo.title;
-  if (t.kind === 'solid') {
-    const g = ctx.createLinearGradient(0, t.y, 0, t.y + t.h);
-    g.addColorStop(0, '#1d0b33');
-    g.addColorStop(1, '#12081f');
-    ctx.fillStyle = g;
-    ctx.fillRect(t.x, t.y, t.w, t.h);
-    // Accent rule across the top of the band.
-    const rule = ctx.createLinearGradient(t.x, 0, t.x + t.w, 0);
-    rule.addColorStop(0, '#ff2975');
-    rule.addColorStop(0.5, '#ffd319');
-    rule.addColorStop(1, '#00e5ff');
-    ctx.fillStyle = rule;
-    ctx.fillRect(t.x, t.y, t.w, Math.max(3, unit * 0.005));
-    if (state.fx.halftone) {
-      ctx.save();
-      ctx.globalAlpha = 0.5;
-      drawHalftone(ctx, t.x + t.w * 0.015, t.y + t.h * 0.12, t.w * 0.1, t.h * 0.76, '#ff2975', unit * 0.006, unit * 0.014);
-      ctx.restore();
+    if (p.heat) {
+      const pill = document.createElement('div');
+      pill.className = 'heat-pill';
+      pill.textContent = 'HEAT ★★★★☆';
+      el.appendChild(pill);
     }
-  } else if (t.kind === 'scrim') {
-    const g = ctx.createLinearGradient(0, t.y, 0, t.y + t.h);
-    g.addColorStop(0, 'rgba(10,5,20,0)');
-    g.addColorStop(0.55, 'rgba(10,5,20,0.72)');
-    g.addColorStop(1, 'rgba(10,5,20,0.92)');
-    ctx.fillStyle = g;
-    ctx.fillRect(t.x, t.y, t.w, t.h);
-  }
 
-  // Masthead + subtitle placement per title kind.
-  const badgeReserve = geo.badge && t.kind !== 'floating' ? geo.badge.r * 2.6 : 0;
-  const textW = t.w - badgeReserve - t.w * 0.06;
-  const centerX = t.align === 'left'
-    ? t.x + t.w * 0.03 + textW / 2
-    : t.x + t.w / 2 - badgeReserve / 2;
-  if (t.kind === 'floating') {
-    drawRibbonTag(ctx, centerX, t.y + t.h * 0.16, 'Leonida');
-    const size = drawMasthead(
-      ctx, state.title, centerX, t.y + t.h * 0.72, t.w * 0.92, state.titleStyle, t.h * 0.52,
-    );
-    drawSubtitle(ctx, state.subtitle, centerX, t.y + t.h * 0.72 + size * 0.42, t.w * 0.8);
-  } else if (t.kind === 'scrim') {
-    const size = drawMasthead(
-      ctx, state.title, centerX, t.y + t.h * 0.66, textW, state.titleStyle, t.h * 0.42,
-    );
-    drawSubtitle(ctx, state.subtitle, centerX, t.y + t.h * 0.66 + size * 0.45, t.w * 0.8);
-  } else {
-    const size = drawMasthead(
-      ctx, state.title, centerX, t.y + t.h * 0.58, textW, state.titleStyle, t.h * 0.46,
-    );
-    drawSubtitle(ctx, state.subtitle, centerX, t.y + t.h * 0.58 + size * 0.42, t.w * 0.72);
-  }
+    const tag = document.createElement('div');
+    tag.className = 'role-tag';
+    tag.innerHTML = '';
+    tag.appendChild(document.createTextNode(p.role));
+    const sub = document.createElement('small');
+    sub.textContent = p.loc + ' · ' + p.time + ' · ' + p.quip;
+    tag.appendChild(sub);
+    el.appendChild(tag);
 
-  // Badge, wanted stars and corner marks.
-  if (geo.badge) drawVIBadge(ctx, geo.badge.x, geo.badge.y, geo.badge.r);
-  if (geo.stars) {
-    drawWantedStars(ctx, geo.stars.x, geo.stars.y, geo.stars.r, state.stars, geo.stars.r * 0.7);
-  }
-  if (state.layout === 'tilted') {
-    // Starburst sticker overlapping the bottom-right panel.
-    const sx = W * 0.88;
-    const sy = H * 0.52;
-    const sr = unit * 0.055;
-    ctx.save();
-    ctx.translate(sx, sy);
-    ctx.rotate(0.18);
-    ctx.fillStyle = '#ffd319';
-    ctx.shadowColor = 'rgba(0,0,0,0.5)';
-    ctx.shadowBlur = 10;
-    ctx.shadowOffsetY = 4;
-    starburstPath(ctx, 0, 0, sr, sr * 0.72, 12);
-    ctx.fill();
-    ctx.shadowColor = 'transparent';
-    ctx.fillStyle = '#171226';
-    ctx.font = `700 ${Math.round(sr * 0.42)}px Impact, "Arial Black", sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('HOT!', 0, 1);
-    ctx.restore();
-  }
-  // (Full bleed needs no extra decorations: the scene itself is the hero.)
-
-  // Retro finish.
-  if (state.fx.scanlines) applyScanlines(ctx, W, H, 0.09);
-  if (state.fx.vignette) applyVignette(ctx, W, H, 0.3);
-  if (state.fx.grain) applyGrain(ctx, W, H, 0.07);
-
-  return geo;
-}
-
-// Render a cover at an export size and return the canvas.
-export function exportCover(state, w, h) {
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  renderCover(canvas, state);
-  return canvas;
-}
-
-// Re-seed every procedural panel (Shuffle art).
-export function reseedPanels(state, artSeed) {
-  state.artSeed = artSeed;
-  state.panels.forEach((panel, i) => {
-    if (!panel.image) {
-      panel.seed = hashSeed(`panel-${i}-${artSeed}`);
-      panel.scene = sceneForPanel(i, artSeed);
-    }
+    el.addEventListener('pointerdown', (e) => { onSelect(panelIndex, e, el); });
+    wrap.appendChild(el);
   });
 }
 
-export { GRADES };
+// Fit the chrome title to the cover width so long titles never overflow.
+export function fitTitle() {
+  const title = document.getElementById('coverTitle');
+  const cover = document.getElementById('cover');
+  const text = document.getElementById('titleText');
+  title.style.fontSize = '';
+  const max = cover.clientWidth * 0.94;
+  let size = parseFloat(getComputedStyle(title).fontSize);
+  for (let i = 0; i < 30 && text.scrollWidth > max && size > 12; i++) {
+    size *= 0.94;
+    title.style.fontSize = size + 'px';
+  }
+}
