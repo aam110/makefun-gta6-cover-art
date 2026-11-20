@@ -1,18 +1,24 @@
-// Palmline Cover Studio — a tiny static server for local testing (Node 22, stdlib only).
-// Serves app/ on http://localhost:8080 (or --port N). Development convenience only:
-// it refuses any path outside app/ and sends the MIME types an offline app needs.
+// Solstice Press — a tiny static server for local testing (Node 22, stdlib only).
+//
+//   node serve.ts            serves app/ at http://localhost:8080
+//   node serve.ts --port 9000   serves app/ on another port
+//
+// Development convenience only: it serves files under app/, refuses anything
+// outside it, and sends the MIME types an offline web app needs.
+
 import { createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = resolve(fileURLToPath(new URL('./app', import.meta.url)));
-const args = process.argv.slice(2);
-const portArg = args.indexOf('--port');
-const wanted = portArg === -1 ? 8080 : Number(args[portArg + 1]);
+const appRoot = resolve(fileURLToPath(new URL('./app', import.meta.url)));
+
+const argv = process.argv.slice(2);
+const portFlag = argv.indexOf('--port');
+const wanted = portFlag === -1 ? 8080 : Number(argv[portFlag + 1]);
 const port = Number.isInteger(wanted) && wanted > 0 && wanted < 65536 ? wanted : 8080;
 
-const MIME = {
+const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
@@ -21,40 +27,40 @@ const MIME = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
-  '.ttf': 'font/ttf',
+  '.svg': 'image/svg+xml',
   '.txt': 'text/plain; charset=utf-8',
 };
 
-createServer((request, response) => {
-  const url = new URL(request.url ?? '/', 'http://localhost');
-  let pathname;
+createServer((req, res) => {
+  const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+  let path = url.pathname;
   try {
-    pathname = decodeURIComponent(url.pathname);
+    path = decodeURIComponent(path);
   } catch {
-    response.writeHead(400).end('bad request');
+    res.writeHead(400).end('bad request');
     return;
   }
-  if (pathname.endsWith('/')) pathname += 'index.html';
-  const file = resolve(join(root, normalize(pathname)));
-  if (file !== root && !file.startsWith(root + sep)) {
-    response.writeHead(403).end('forbidden');
+  if (path.endsWith('/')) path += 'index.html';
+  const file = resolve(join(appRoot, normalize(path)));
+  if (file !== appRoot && !file.startsWith(appRoot + sep)) {
+    res.writeHead(403).end('forbidden');
     return;
   }
   let size;
   try {
-    const stats = statSync(file);
-    if (!stats.isFile()) throw new Error('not a file');
-    size = stats.size;
+    const info = statSync(file);
+    if (!info.isFile()) throw new Error('not a file');
+    size = info.size;
   } catch {
-    response.writeHead(404).end('not found');
+    res.writeHead(404).end('not found');
     return;
   }
-  response.writeHead(200, {
-    'content-type': MIME[extname(file).toLowerCase()] ?? 'application/octet-stream',
+  res.writeHead(200, {
+    'content-type': TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream',
     'content-length': size,
     'cache-control': 'no-store',
   });
-  createReadStream(file).pipe(response);
+  createReadStream(file).pipe(res);
 }).listen(port, '127.0.0.1', () => {
-  console.log(`Palmline app/ is on http://localhost:${port}`);
+  console.log(`Solstice Press is on http://localhost:${port}`);
 });
