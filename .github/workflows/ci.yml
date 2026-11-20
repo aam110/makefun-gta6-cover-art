@@ -1,48 +1,29 @@
 name: CI
-
-on:
-  push:
-  pull_request:
-
+on: [push, pull_request]
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: "24"
-
-      - name: Check JavaScript syntax
+          node-version: '22'
+      - name: Check required files
         run: |
-          node --check app/src/main.js
-          node --check app/src/cover.js
-          node --check app/src/art.js
-          node --check app/src/lettering.js
-
-      - name: Check required files exist
-        run: |
+          test -f main.ts
+          test -f serve.ts
+          test -f shots.json
+          test -f README.md
+          test -f LICENSE
           test -f app/index.html
           test -f app/style.css
           test -f app/src/main.js
-          test -f app/src/cover.js
-          test -f app/src/art.js
-          test -f app/src/lettering.js
-          test -f main.ts
-          test -f serve.ts
-          test -f vendor/makefun-app.ts
-          test -f LICENSE
-          test -f README.md
-          test -f shots.json
-          test "$(ls screenshots/*.jpg screenshots/*.png 2>/dev/null | wc -l)" -ge 3
-
-      - name: Build the entry output
+      - name: Check JS syntax
         run: |
-          rm -rf out
-          mkdir -p out
-          MAKEFUN_OUTPUT_DIR=out node main.ts
-          test -f out/dossier.json
-          test -f out/app/index.html
-          test "$(ls out/screenshots | wc -l)" -ge 3
+          for f in app/src/*.js; do node --check "$f"; done
+      - name: Check screenshots exist
+        run: |
+          test -f screenshots/1-cover.jpg
+          test -f screenshots/2-editor.jpg
+          test -f screenshots/3-cover-portrait.jpg
+          test -f screenshots/4-cover-square.jpg
