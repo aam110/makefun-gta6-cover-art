@@ -2,9 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
-  workflow_dispatch:
 
 jobs:
   check:
@@ -12,41 +10,39 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: "24"
 
       - name: Check JavaScript syntax
         run: |
-          node --check app/src/cover.js
           node --check app/src/main.js
-          node --check serve.ts
-          node --check main.ts
+          node --check app/src/cover.js
+          node --check app/src/art.js
+          node --check app/src/lettering.js
 
-      - name: Verify font magic bytes (TrueType 00 01 00 00)
+      - name: Check required files exist
         run: |
-          for f in app/fonts/*.ttf; do
-            magic=$(head -c 4 "$f" | od -An -tx1 | tr -d ' \n')
-            if [ "$magic" != "00010000" ]; then
-              echo "$f: bad magic bytes: $magic"
-              exit 1
-            fi
-            echo "$f: OK ($magic)"
-          done
-          test -f app/fonts/OFL.txt || (echo "app/fonts/OFL.txt missing" && exit 1)
+          test -f app/index.html
+          test -f app/style.css
+          test -f app/src/main.js
+          test -f app/src/cover.js
+          test -f app/src/art.js
+          test -f app/src/lettering.js
+          test -f main.ts
+          test -f serve.ts
+          test -f vendor/makefun-app.ts
+          test -f LICENSE
+          test -f README.md
+          test -f shots.json
+          test "$(ls screenshots/*.jpg screenshots/*.png 2>/dev/null | wc -l)" -ge 3
 
-      - name: Check required files
+      - name: Build the entry output
         run: |
-          test -f app/index.html || (echo "app/index.html missing" && exit 1)
-          test -f app/style.css || (echo "app/style.css missing" && exit 1)
-          test -f app/src/cover.js || (echo "app/src/cover.js missing" && exit 1)
-          test -f app/src/main.js || (echo "app/src/main.js missing" && exit 1)
-          test -f main.ts || (echo "main.ts missing" && exit 1)
-          test -f serve.ts || (echo "serve.ts missing" && exit 1)
-          test -f vendor/makefun-app.ts || (echo "vendor/makefun-app.ts missing" && exit 1)
-          test -f LICENSE || (echo "LICENSE missing" && exit 1)
-          test -f README.md || (echo "README.md missing" && exit 1)
-          test -f shots.json || (echo "shots.json missing" && exit 1)
-          ls screenshots/*.jpg | wc -l | grep -q . || (echo "no screenshots" && exit 1)
-          echo "All required files present."
+          rm -rf out
+          mkdir -p out
+          MAKEFUN_OUTPUT_DIR=out node main.ts
+          test -f out/dossier.json
+          test -f out/app/index.html
+          test "$(ls out/screenshots | wc -l)" -ge 3
